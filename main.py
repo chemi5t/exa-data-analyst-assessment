@@ -2,6 +2,28 @@ import os
 
 from _01_emis_data_analysis_project_files.data_extraction import DataExtractor
 
+def print_dataframe_info(df):
+    """
+    Prints the DataFrame table, its info, and description.
+
+    Parameters:
+    df (pandas.DataFrame): The DataFrame to be printed and analysed.
+
+    Returns:
+    None
+    """
+    print("\nDataFrame table: \n")
+    print(df)
+    
+    print("\nDataFrame.info(): \n")
+    print(df.info())  # Note: df.info() prints its output and returns None
+    
+    print("\nDataFrame.describe(): \n")
+    print(df.describe())
+
+# Example usage:
+# print_dataframe_info(medication_df)
+
 if __name__ == "__main__":
     extractor = DataExtractor()
 
@@ -19,12 +41,7 @@ if __name__ == "__main__":
 
     print("\nNote: Created 'combined_medication.csv' and saved to 'data' folder.\n")
 
-    print("\nmedication_df table: \n")
-    print(medication_df)
-    print("\nmedication_df.info(): \n")
-    print(medication_df.info())
-    print("\nmedication_df.describe(): \n")
-    print(medication_df.describe())
+    print_dataframe_info(medication_df)
 
     print("################################################## observation extraction ##################################################")
 
@@ -43,12 +60,7 @@ if __name__ == "__main__":
 
     print("\nNote: Created 'combined_observation.csv' and saved to 'data' folder.\n")
 
-    print("\nobservation_df table: \n")
-    print(observation_df)
-    print("\nobservation_df.info(): \n")
-    print(observation_df.info())
-    print("\nobservation_df.describe(): \n")
-    print(observation_df.describe())
+    print_dataframe_info(observation_df)
 
     print("################################################## clinical extraction ##################################################")
 
@@ -58,12 +70,7 @@ if __name__ == "__main__":
     # Extract clinical_codes from the CSV file into a pandas DataFrame
     clinical_codes_df = extractor.extract_from_csv(clinical_codes_file_path)
 
-    print("\nclinical_codes_df table: \n")
-    print(clinical_codes_df)
-    print("\nclinical_codes_df.info(): \n")
-    print(clinical_codes_df.info())
-    print("\nclinical_codes_df.describe(): \n")
-    print(clinical_codes_df.describe())
+    print_dataframe_info(clinical_codes_df)
 
     print("################################################## patient extraction ##################################################")
 
@@ -73,10 +80,5 @@ if __name__ == "__main__":
     # Extract data from the CSV file into a pandas DataFrame
     patient_df = extractor.extract_from_csv(patient_file_path)
 
-    print("\npatient_df table: \n")
-    print(patient_df)
-    print("\npatient_df.info(): \n")
-    print(patient_df.info())
-    print("\npatient_df.describe(): \n")
-    print(patient_df.describe())
-    print("TEST END")
+    print_dataframe_info(patient_df)
+ 
