@@ -2,3 +2,5 @@
 *.env
 __pycache__/
 .vscode
+combined_medication.csv
+combined_observation.csv
