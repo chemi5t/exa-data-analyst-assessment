@@ -2,7 +2,10 @@ import os
 from decouple import config # Calling sensitive information
 
 
-from _01_emis_data_analysis_project_files.data_extraction import DataExtractor
+from _01_emis_data_analysis_project_files.data_extraction import DataExtractor as de
+from _01_emis_data_analysis_project_files.database_utils import DatabaseConnector as dco
+
+
 
 def print_dataframe_info(df):
     """
@@ -24,7 +27,16 @@ def print_dataframe_info(df):
     print(df.describe())
 
 if __name__ == "__main__":
-    extractor = DataExtractor()
+
+    # Initialise instances
+    data_extractor = de()
+    data_connector = dco()
+
+    cred_config_access = config('credentials_env') # refers to .yaml file via decouple import config; to gain access to private credentials for API
+    cred_config_api = data_connector.read_db_creds(file_path = cred_config_access) # extracts the credentials from .yaml file
+
+    postgres_engine = data_connector.init_db_engine(credentials = cred_config_api)      # Initialise database engine
+
 
     print("################################################## medication extraction ##################################################")
 
@@ -33,7 +45,7 @@ if __name__ == "__main__":
     header_file = 'medication.csv'
 
     # Read and combine CSV files
-    medication_df = extractor.read_and_combine_csv(folder_path, header_file)
+    medication_df = data_extractor.read_and_combine_csv(folder_path, header_file)
 
     # Save the combined DataFrame to a new CSV file
     medication_df.to_csv(os.path.join('data', 'combined_medication.csv'), index=False, encoding='utf-8')
@@ -52,7 +64,7 @@ if __name__ == "__main__":
     header_file = 'observation.csv'
 
     # Read and combine CSV files
-    observation_df = extractor.read_and_combine_csv(folder_path, header_file)
+    observation_df = data_extractor.read_and_combine_csv(folder_path, header_file)
 
     # Save the combined DataFrame to a new CSV file
     observation_df.to_csv(os.path.join('data', 'combined_observation.csv'), index=False, encoding='utf-8')
@@ -67,7 +79,7 @@ if __name__ == "__main__":
     clinical_codes_file_path = os.path.join('data', 'clinical_codes.csv')
 
     # Extract clinical_codes from the CSV file into a pandas DataFrame
-    clinical_codes_df = extractor.extract_from_csv(clinical_codes_file_path)
+    clinical_codes_df = data_extractor.extract_from_csv(clinical_codes_file_path)
 
     print_dataframe_info(clinical_codes_df)
 
@@ -77,7 +89,7 @@ if __name__ == "__main__":
     patient_file_path = os.path.join('data', 'patient.csv')
 
     # Extract data from the CSV file into a pandas DataFrame
-    patient_df = extractor.extract_from_csv(patient_file_path)
+    patient_df = data_extractor.extract_from_csv(patient_file_path)
 
     print_dataframe_info(patient_df)
  
