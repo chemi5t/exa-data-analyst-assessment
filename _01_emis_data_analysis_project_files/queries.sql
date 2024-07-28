@@ -51,3 +51,25 @@ WHERE
 ORDER BY 
     postcode_rank;
 
+
+-- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes 
+-- from asthma refset (refsetid 999012891000230104 = dim_clinical_codes), and not resolved [see dim_medication[Fhir] : active or completed]
+SELECT *
+FROM dim_clinical_codes;
+
+SELECT *
+FROM dim_medication;
+
+
+SELECT 
+	*
+FROM 
+	dim_clinical_codes AS cl
+JOIN 
+	dim_medication as me
+ON
+	cl.code_id = me.emis_code_id
+WHERE 
+	cl.refset_simple_id = 999012891000230104;
+
+
