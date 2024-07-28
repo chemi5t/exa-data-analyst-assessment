@@ -52,3 +52,18 @@ class DatabaseConnector:
         """
         selected_table_df.to_sql(selected_table, engine, if_exists='replace', index=False)
         print(f"Data uploaded to table '{selected_table}'.\n")
+    
+    @staticmethod
+    def upload_list_to_db(dataframes_with_table_names: list, engine):
+        """
+        Uploads multiple DataFrames to a PostgreSQL database.
+
+        Args:
+            dataframes_with_table_names (list): A list of dictionaries, each containing a DataFrame and a table name.
+            engine: SQLAlchemy engine object.
+        """
+        for item in dataframes_with_table_names:
+            df = item["dataframe"]
+            table_name = item["table_name"]
+            df.to_sql(table_name, engine, if_exists='replace', index=False)
+            print(f"Uploaded DataFrame to table '{table_name}' successfully.")

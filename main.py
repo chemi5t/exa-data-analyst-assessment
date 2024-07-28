@@ -53,7 +53,9 @@ def medication_extraction():
 
     print_dataframe_info(medication_df)
 
-def observation_extraction():
+    return medication_df
+
+def observation_extraction_tranformation():
 
     # Define folder path and header file for observation data
     folder_path = os.path.join('data', 'observation')
@@ -75,6 +77,7 @@ def observation_extraction():
 
     print_dataframe_info(observation_df)
 
+    return observation_df
 
 def clinical_extraction():
     # Define path to clinical codes CSV file
@@ -85,6 +88,8 @@ def clinical_extraction():
 
     print_dataframe_info(clinical_codes_df)
 
+    return clinical_codes_df
+
 def patient_extraction():
     # Define path to patient CSV file
     patient_file_path = os.path.join('data', 'patient.csv')
@@ -94,30 +99,41 @@ def patient_extraction():
 
     print_dataframe_info(patient_df)
 
-if __name__ == "__main__":
+    return patient_df
 
+if __name__ == "__main__":
+    
     try:
         print("################################################## Medication Extraction ##################################################")
 
-        medication_extraction()
+        medication_df = medication_extraction()
 
-        print("################################################## Observation Extraction ##################################################")
+        print("################################################## Observation Extraction and Transformation ##################################################")
 
-        observation_extraction()
+        observation_df = observation_extraction_tranformation()
 
-        print("################################################## Clinical Extraction ##################################################")
+        print("################################################## Clinical Codes Extraction ##################################################")
 
-        clinical_extraction()
+        clinical_codes_df = clinical_extraction()
 
         print("################################################## Patient Extraction ##################################################")
 
-        patient_extraction()
+        patient_df = patient_extraction()
 
         print("################################################## Upload to postgresSQL (pgAdmin4) ##################################################")
 
+        # List of DataFrames and their corresponding table names
+        df_list_to_upload = [
+            {"dataframe": medication_df, "table_name": "dim_medication"},
+            {"dataframe": observation_df, "table_name": "dim_observation"},
+            {"dataframe": clinical_codes_df, "table_name": "dim_clinical_codes"},
+            {"dataframe": patient_df, "table_name": "dim_patient"}
+            ]
+                
+        # Upload DataFrames to PostgreSQL
+        data_connector.upload_list_to_db(df_list_to_upload, engine = postgres_engine)
 
-
-
+        print("################################################## ETL completed ##################################################")
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
