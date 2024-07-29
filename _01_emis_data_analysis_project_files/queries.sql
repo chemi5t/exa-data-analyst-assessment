@@ -60,16 +60,54 @@ FROM dim_clinical_codes;
 SELECT *
 FROM dim_medication;
 
+SELECT refset_simple_id
+FROM dim_clinical_codes
+WHERE refset_simple_id = 9.990128910002301e+17;
+
+SELECT *
+FROM dim_clinical_codes AS cl
+JOIN dim_medication AS me
+ON cl.code_id = me.emis_code_id::double precision
+WHERE cl.refset_simple_id = 999012891000230104;
+
+SELECT *
+FROM dim_clinical_codes AS cl
+JOIN dim_medication AS me
+ON cl.code_id::bigint = me.emis_code_id::bigint
+WHERE cl.refset_simple_id::bigint = 999012891000230104;
+
+
+
+
+SELECT *
+FROM dim_clinical_codes AS cl
+JOIN dim_medication AS me
+ON cl.code_id = me.emis_code_id
+WHERE cl.refset_simple_id = CAST(999012891000230104 AS double precision);
+
+SELECT *
+FROM dim_clinical_codes AS cl
+JOIN dim_medication AS me
+ON cl.code_id::double precision = me.emis_code_id::double precision
+WHERE cl.refset_simple_id::double precision = 999012891000230104;
+
+
+SELECT *
+FROM dim_clinical_codes
+WHERE refset_simple_id IS NULL;
+
+
 
 SELECT 
 	*
 FROM 
 	dim_clinical_codes AS cl
 JOIN 
-	dim_medication as me
+	dim_medication AS me
 ON
 	cl.code_id = me.emis_code_id
 WHERE 
-	cl.refset_simple_id = 999012891000230104;
+	me.fhir_medication_status = 'active';
+	--cl.refset_simple_id = 999012891000230104;
 
 
