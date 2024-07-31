@@ -142,3 +142,31 @@ WHERE medication_guid = 'C2595C9E-3B3E-43A7-BD16-2A5C4114FD20';
 SELECT DISTINCT medication_guid
 FROM dim_medication
 WHERE medication_guid = 'C2595C9E-3B3E-43A7-BD16-2A5C4114FD20';
+
+
+--------------------------------------------------------------------------
+-- working query!
+
+SELECT 
+	p.patient_id, 
+	p.registration_guid, 
+	m.registration_guid, 
+	o.registration_guid, 
+	m.emis_code_id, 
+	m.snomed_concept_id, 
+	o.snomed_concept_id, 
+	c.snomed_concept_id, 
+	prd.emis_term, 
+	d.snomed_concept_id, 
+	c.refset_simple_id
+FROM dim_patient AS p
+JOIN dim_medication AS m
+ON p.registration_guid = m.registration_guid
+JOIN product AS prd
+ON m.emis_code_id = prd.code_id
+JOIN drugs AS d
+ON prd.parent_code_id = d.code_id
+RIGHT JOIN dim_observation AS o
+ON o.registration_guid = p.registration_guid
+RIGHT JOIN conditions as c
+ON c.code_id = o.emis_code_id;
