@@ -64,7 +64,15 @@ WHERE
 SELECT *
 FROM conditions;
 --------------------------------------------------------------------------
+-- to store post_code_area
+ALTER TABLE dim_patient ADD COLUMN postcode_area VARCHAR(10);
 
+UPDATE dim_patient
+	SET postcode_area = CASE 
+		WHEN postcode ~ '^[A-Za-z]+' THEN regexp_replace(postcode, '^([A-Za-z]+).*', '\1')
+		ELSE NULL
+	END;
+--------------------------------------------------------------------------
 ALTER TABLE drugs ADD PRIMARY KEY (code_id);
 
 ALTER TABLE product 

@@ -2,6 +2,8 @@
 SELECT *
 FROM dim_patient;
 
+
+
 -- Part 1: Using the patient data provided identify how many patients there are for each given 
 -- postcode area to check which area would be best to use for the population you are looking for. 
 -- Patient counts should be reviewed by gender to make sure there's enough distribution across genders.
@@ -10,25 +12,25 @@ FROM dim_patient;
 -- Patient counts by postcode and gender
 WITH patient_counts AS (
     SELECT 
-        postcode,
+        postcode_area,
         gender,
         COUNT(*) AS number_of_patients,
-        SUM(COUNT(*)) OVER (PARTITION BY postcode) AS total_patients_per_postcode
+        SUM(COUNT(*)) OVER (PARTITION BY postcode_area) AS total_patients_per_postcode
     FROM 
         dim_patient
     GROUP BY 
-        postcode, 
+        postcode_area, 
         gender
 )
 SELECT 
-    postcode,
+    postcode_area,
     gender,
     number_of_patients,
     total_patients_per_postcode
 FROM 
     patient_counts
 ORDER BY 
-    total_patients_per_postcode DESC, postcode, gender;
+    total_patients_per_postcode DESC, postcode_area, gender;
 
 
 -- Part 2: Using the information you have from part 1 identify the 2 most suitable postcode areas (i.e. largest patient count) 
@@ -36,36 +38,38 @@ ORDER BY
 
 WITH patient_counts AS (
 	SELECT 
-		postcode,
-		gender,
+		p.postcode_area,
+		p.gender,
 		COUNT(*) AS number_of_patients,
-		SUM(COUNT(*)) OVER (PARTITION BY postcode) AS total_patients_per_postcode
+		SUM(COUNT(*)) OVER (PARTITION BY p.postcode_area) AS total_patients_per_postcode
 	FROM 
-		dim_patient
+		dim_patient AS p
 	GROUP BY 
-		postcode, 
-		gender
+		p.postcode_area, 
+		p.gender
 ),
-ranked_postcodes AS (
+ranked_postcode_areas AS (
     SELECT 
-        postcode,
-		gender,
-        total_patients_per_postcode,
-        DENSE_RANK() OVER (ORDER BY total_patients_per_postcode DESC) AS postcode_rank
+        pc.postcode_area,
+		pc.gender,
+		pc.number_of_patients,
+        pc.total_patients_per_postcode,
+        DENSE_RANK() OVER (ORDER BY pc.total_patients_per_postcode DESC) AS postcode_rank
     FROM 
-        patient_counts
+        patient_counts AS pc
 )
 SELECT 
-    postcode,
-	gender,
-    total_patients_per_postcode,
-    postcode_rank
+    rp.postcode_area,
+	rp.gender,
+	rp.number_of_patients,
+    rp.total_patients_per_postcode,
+    rp.postcode_rank
 FROM 
-    ranked_postcodes
+    ranked_postcode_areas AS rp
 WHERE 
-    postcode_rank <= 20
+    rp.postcode_rank <= 2
 ORDER BY 
-    postcode_rank
+    rp.postcode_rank
 
 -- Part 3:
 -- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes 
@@ -73,128 +77,139 @@ ORDER BY
 
 WITH patient_counts AS (
 	SELECT 
-		postcode,
-		registration_guid,
-		gender,
+		p.patient_id,
+		p.postcode_area,
+		p.gender,
 		COUNT(*) AS number_of_patients,
-		SUM(COUNT(*)) OVER (PARTITION BY postcode) AS total_patients_per_postcode
+		SUM(COUNT(*)) OVER (PARTITION BY p.postcode_area) AS total_patients_per_postcode
 	FROM 
-		dim_patient
+		dim_patient AS p
 	GROUP BY 
-		postcode, 
-		gender, 
-		registration_guid
+		p.postcode_area, 
+		p.gender,
+		p.patient_id
 ),
-ranked_postcodes AS (
+ranked_postcode_areas AS (
     SELECT 
-        postcode,
- 		gender,
-        total_patients_per_postcode,
-        DENSE_RANK() OVER (ORDER BY total_patients_per_postcode DESC) AS postcode_rank
+		pc.patient_id,
+        pc.postcode_area,
+		pc.gender,
+		pc.number_of_patients,
+        pc.total_patients_per_postcode,
+        DENSE_RANK() OVER (ORDER BY pc.total_patients_per_postcode DESC) AS postcode_rank
     FROM 
-        patient_counts
-)
+        patient_counts AS pc
+),
+top_areas AS (
 	SELECT 
-		postcode_rank
+		rpa.patient_id,
+		rpa.postcode_area,
+		rpa.gender,
+		rpa.number_of_patients,
+		rpa.total_patients_per_postcode,
+		rpa.postcode_rank
 	FROM 
-		ranked_postcodes
+		ranked_postcode_areas AS rpa
 	WHERE 
-		postcode_rank <= 3
+		rpa.postcode_rank <= 2
 	ORDER BY 
-		postcode_rank
-)
---organisation, registration id, patient id, full name, postcode, age, and gender.
--- current_asthma_patients AS (
-    SELECT 
-        p.registration_guid,
-        p.patient_id,
-	    p.patient_givenname,
-        p.patient_surname,
-        p.postcode,
-	    p.age,
-        p.gender
-    FROM 
-        dim_patient p
-    JOIN 
-		dim_observation AS o 
+		rpa.postcode_rank
+),
+list_of_patient_criteria AS (
+	SELECT 
+		o.consultation_source_emis_original_term AS o_consultation_source_emis_original_term,		-- >>>>>>>>>>NOTE:Need to confirmed with mananger in terms of organisation
+		p.patient_id,
+		m.emis_code_id AS med_emis_code_id,
+		m.authorisedissues_authorised_date AS m_authorisedissues_authorised_date,		
+		prd.code_id AS prd_code_id,
+		d.code_id AS d_code_id,
+		d.snomed_concept_id AS d_snomed_concept_id,
+		o.emis_original_term AS o_emis_original_term,
+		c.code_id AS c_code_id,
+		c.refset_simple_id AS c_refset_simple_id,
+		c.emis_term AS c_emis_term,
+		c.snomed_concept_id AS c_snomed_concept_id
+	FROM 
+		dim_patient AS p
+	JOIN 
+		dim_medication AS m
+	ON 
+		p.registration_guid = m.registration_guid
+	JOIN 
+		product AS prd
+	ON 
+		m.emis_code_id = prd.code_id
+	JOIN 
+		drugs AS d
+	ON 
+		prd.parent_code_id = d.code_id
+	JOIN 
+		dim_observation AS o
 	ON 
 		p.registration_guid = o.registration_guid
-    JOIN 
-		conditions AS c 
+	JOIN 
+		conditions as c
 	ON 
 		o.emis_code_id = c.code_id
-    JOIN 
-		top_postcode AS tp 
-	ON 
-		c.registration_guid = tp.registration_guid
-    WHERE 
-        c.refset_simple_id = 999012891000230104
+	WHERE 
+		-- patients should have:
 
+		c.refset_simple_id = 999012891000230104 AND 			-- has asthma 
+		c.emis_term NOT ILIKE '%Asthma resolved%' AND 			-- and asthma not resolved >>>>>>>>>>NOTE: need to confirm with manager
+		m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years') AND		-- in the last 30 years only >>>>>>>>>>NOTE:Need to confirmed with mananger. Is the correct column selected?
+		(d.code_id, d.snomed_concept_id) IN (
+			(591221000033116, 129490002), 						-- Formoterol Fumarate
+			(717321000033118, 108606009), 						-- Salmeterol Xinafoate
+			(1215621000033114, 702408004), 						-- Vilanterol
+			(972021000033115, 702801003), 						-- Indacaterol
+			(1223821000033118, 704459002) 						-- Olodaterol
+		) AND
 
--- Q. derive a list of patients that fit the following criteria so that you can invite them to take part in a local research study.
+		-- AND to exclude if:
 
--- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes 
--- from asthma refset (refsetid 999012891000230104), and not resolved
+		c.emis_term NOT ILIKE '%smoker%' AND 					-- not a smoker >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999004211000230104 found so filtered on term to be excluded --> Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
+		c.snomed_concept_id != 27113001 AND 						-- currently weigh less than 40 kg 
+		c.emis_term NOT ILIKE '%COPD%' AND 						-- and COPD not resolved >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999011571000230107 found so filtered on term to be excluded --> Should not currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
+																-- >>>>>>>>>>NOTE: need to address whether the COPD is resolved or not as this has not been defined
 
+		-- only patients that have not opted out of taking part in research or sharing their medical records
 
-
-
---CTE
--- have current observation in medical record
--- refsetid 999012891000230104
--- not resolved
--- inclusion and exclusion
-
-
-SELECT 
-	*
+		o.emis_original_term NOT ILIKE '%Declined consent for researcher to access clinical record%' AND  			-- >>>>>>>>>>NOTE:Need to confirmed with mananger
+		o.emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' AND 
+		o.emis_original_term NOT ILIKE '%No consent for electronic record sharing%' AND 
+		o.emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%'
+)
+-- organisation, registration id, patient id, full name, postcode, age, and gender.
+SELECT DISTINCT
+	lpc.o_consultation_source_emis_original_term AS o_lpc_organisation,
+	p.registration_guid AS p_registration_id,
+	p.patient_id AS p_patient_id,
+	p.patient_givenname || ' ' || p.patient_surname AS p_full_name,
+	p.postcode AS p_postcode,
+	p.age AS p_age,
+	p.gender AS p_gender
 FROM 
-	dim_patient AS p
+	dim_patient as p
 JOIN 
-	dim_medication AS m
+	list_of_patient_criteria as lpc
+ON
+	p.patient_id = lpc.patient_id
+JOIN
+	patient_counts as pc
 ON 
-	p.registration_guid = m.registration_guid
-JOIN 
-	product AS prd
-ON 
-	m.emis_code_id = prd.code_id
-JOIN 
-	drugs AS d
-ON 
-	prd.parent_code_id = d.code_id
-JOIN 
-	dim_observation AS o
-ON 
-	p.registration_guid = o.registration_guid
-JOIN 
-	conditions as c
-ON 
-	o.emis_code_id = c.code_id
-WHERE 
-	-- patients should have:
-	
-    c.refset_simple_id = 999012891000230104 AND 			-- has asthma 
-	c.emis_term NOT ILIKE '%Asthma resolved%' AND 			-- and asthma not resolved >>>>>>>>>>NOTE: need to confirm with manager
-	(d.code_id, d.snomed_concept_id) IN (
-		(591221000033116, 129490002), 						-- Formoterol Fumarate
-        (717321000033118, 108606009), 						-- Salmeterol Xinafoate
-        (1215621000033114, 702408004), 						-- Vilanterol
-        (972021000033115, 702801003), 						-- Indacaterol
-        (1223821000033118, 704459002) 						-- Olodaterol
-    ) AND
-	
-	-- AND to exclude if:
-	
-	c.emis_term NOT ILIKE '%smoker%' AND 					-- not a smoker >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999004211000230104 found so filtered on term to be excluded --> Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
-	c.snomed_concept_id != 27113001 AND 						-- currently weigh less than 40 kg 
-	c.emis_term NOT ILIKE '%COPD%' AND 						-- and COPD not resolved >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999011571000230107 found so filtered on term to be excluded --> Should not currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
-								   							-- >>>>>>>>>>NOTE: need to address whether the COPD is resolved or not as this has not been defined
-								   
-	-- only patients that have not opted out of taking part in research or sharing their medical records
-	
-	o.emis_original_term NOT ILIKE '%Declined consent for researcher to access clinical record%' AND  			-- >>>>>>>>>>NOTE:Need to confirmed with mananger
-    o.emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' AND 
-    o.emis_original_term NOT ILIKE '%No consent for electronic record sharing%' AND 
-    o.emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%'
-	;
-	
+	lpc.patient_id = pc.patient_id
+JOIN
+	ranked_postcode_areas as rpa
+ON
+	pc.patient_id = rpa.patient_id
+JOIN
+	top_areas as ta
+ON
+	rpa.patient_id = ta.patient_id
+ORDER BY
+	p_postcode,
+	p_full_name,
+	p_patient_id,
+	o_lpc_organisation,
+	p_age,
+	p_gender;
