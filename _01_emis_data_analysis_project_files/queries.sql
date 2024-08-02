@@ -4,9 +4,9 @@ FROM dim_patient;
 
 
 
--- Part 1: Using the patient data provided identify how many patients there are for each given 
--- postcode area to check which area would be best to use for the population you are looking for. 
--- Patient counts should be reviewed by gender to make sure there's enough distribution across genders.
+-- Part 1: Using the patient data provided identify how many patients there are for each given postcode 
+-- area to check which area would be best to use for the population you are looking for. Patient counts 
+-- should be reviewed by gender to make sure there's enough distribution across genders.
 
 
 -- Patient counts by postcode and gender
@@ -34,7 +34,7 @@ ORDER BY
 
 
 -- Part 2: Using the information you have from part 1 identify the 2 most suitable postcode areas (i.e. largest patient count) 
--- and derive a list of patients that fit the following criteria so that you can invite them to take part in a local research study
+-- and derive a list of patients that fit the following criteria so that you can invite them to take part in a local research study.
 
 WITH patient_counts AS (
 	SELECT 
@@ -71,9 +71,31 @@ WHERE
 ORDER BY 
     rp.postcode_rank
 
--- Part 3:
--- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes 
--- from asthma refset (refsetid 999012891000230104 = dim_clinical_codes), and not resolved [see dim_medication[Fhir] : active or completed]
+
+-- Part 3 or 3:
+-- >>>>>>>>>>>>>>>>NOTE: refer to investigating.sql to see how the final solution was refined to reduce duplicate entries<<<<<<<<<<<<<<
+
+-- Patients should have:
+
+-- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes from 
+-- asthma refset (refsetid 999012891000230104), and not resolved
+-- Have been prescribed medication from the list below, or any medication containing these ingredients (i.e. need to find 
+-- child clinical codes), in the last 30 years:
+-- Formoterol Fumarate (codeid 591221000033116, SNOMED concept id 129490002)
+-- Salmeterol Xinafoate (codeid 717321000033118, SNOMED concept id 108606009)
+-- Vilanterol (codeid 1215621000033114, SNOMED concept id 702408004)
+-- Indacaterol (codeid 972021000033115, SNOMED concept id 702801003)
+-- Olodaterol (codeid 1223821000033118, SNOMED concept id 704459002)
+
+-- AND should be excluded if:
+
+-- Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
+-- Currently weight less than 40kg (SNOMED concept id 27113001)
+-- Currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
+
+-- Only patients that have not opted out of taking part in research or sharing their medical record should be invited to participate (type 1 opt out, connected care opt out)
+
+-- You will need to use a combination of the patient, observation, medication and clinical code information for a complete picture of a medical record. You should aim for your code to return a list of eligible patients with information on their organisation, registration id, patient id, full name, postcode, age, and gender.
 
 WITH patient_counts AS (
 	SELECT 
@@ -178,10 +200,31 @@ list_of_patient_criteria AS (
 		o.emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' AND 
 		o.emis_original_term NOT ILIKE '%No consent for electronic record sharing%' AND 
 		o.emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%'
+),
+patient_with_non_null AS (
+    SELECT DISTINCT
+        lpc.patient_id
+    FROM 
+        list_of_patient_criteria AS lpc
+    WHERE 
+        lpc.o_consultation_source_emis_original_term IS NOT NULL
+),
+filtered_patient_criteria AS (
+    SELECT DISTINCT
+        lpc.patient_id,
+        lpc.o_consultation_source_emis_original_term
+    FROM 
+        list_of_patient_criteria AS lpc
+    LEFT JOIN 
+        patient_with_non_null AS pnn 
+    ON 
+        lpc.patient_id = pnn.patient_id
+    WHERE 
+        pnn.patient_id IS NULL OR lpc.o_consultation_source_emis_original_term IS NOT NULL
 )
 -- organisation, registration id, patient id, full name, postcode, age, and gender.
 SELECT DISTINCT
-	lpc.o_consultation_source_emis_original_term AS o_lpc_organisation,
+	fpc.o_consultation_source_emis_original_term AS o_fpc_organisation,
 	p.registration_guid AS p_registration_id,
 	p.patient_id AS p_patient_id,
 	p.patient_givenname || ' ' || p.patient_surname AS p_full_name,
@@ -206,10 +249,14 @@ JOIN
 	top_areas as ta
 ON
 	rpa.patient_id = ta.patient_id
+JOIN 
+    filtered_patient_criteria AS fpc
+ON
+    p.patient_id = fpc.patient_id
 ORDER BY
 	p_postcode,
 	p_full_name,
 	p_patient_id,
-	o_lpc_organisation,
+	o_fpc_organisation,
 	p_age,
 	p_gender;
