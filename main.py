@@ -55,7 +55,7 @@ def medication_extraction():
 
     return medication_df
 
-def observation_extraction_tranformation():
+def observation_extraction_transformation():
 
     # Define folder path and header file for observation data
     folder_path = os.path.join('data', 'observation')
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
         print("################################################## Observation Extraction and Transformation ##################################################")
 
-        observation_df = observation_extraction_tranformation()
+        observation_df = observation_extraction_transformation()
 
         print("################################################## Clinical Codes Extraction ##################################################")
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
             {"dataframe": observation_df, "table_name": "dim_observation"},
             {"dataframe": clinical_codes_df, "table_name": "dim_clinical_codes"},
             {"dataframe": patient_df, "table_name": "dim_patient"}
-            ]
+        ]
                 
         # Upload DataFrames to PostgreSQL
         data_connector.upload_list_to_db(df_list_to_upload, engine = postgres_engine)
