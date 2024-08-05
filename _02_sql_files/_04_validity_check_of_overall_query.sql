@@ -1,98 +1,13 @@
--- Part 1: Using the patient data provided identify how many patients there are for each given postcode 
--- area to check which area would be best to use for the population you are looking for. Patient counts 
--- should be reviewed by gender to make sure there's enough distribution across genders.
+-- ========================================================================
+-- QUERY: Patient Data Filtering and Analysis
+-- ========================================================================
+-- PURPOSE:
+-- This query is designed to filter and analyse patient data based on specific criteria.
+-- It focuses on patients with asthma, ensuring they meet various criteria related to
+-- medication, smoking status, weight, COPD diagnosis, and consent to share data.
 
+--CONSIDERATIONS: check against refset_simple_id column found originally in dim_clinical_codes
 
--- Patient counts by postcode and gender
-WITH patient_counts AS (
-    SELECT 
-        postcode_area,
-        gender,
-        COUNT(*) AS number_of_patients,
-        SUM(COUNT(*)) OVER (PARTITION BY postcode_area) AS total_patients_per_postcode
-    FROM 
-        dim_patient
-    GROUP BY 
-        postcode_area, 
-        gender
-)
-SELECT 
-    postcode_area,
-    gender,
-    number_of_patients,
-    total_patients_per_postcode
-FROM 
-    patient_counts
-ORDER BY 
-    total_patients_per_postcode DESC, postcode_area, gender;
-
-
--- Part 2: Using the information you have from part 1 identify the 2 most suitable postcode areas (i.e. largest patient count) 
--- and derive a list of patients that fit the following criteria so that you can invite them to take part in a local research study.
-
-WITH patient_counts AS (
-	SELECT 
-		p.postcode_area,
-		p.gender,
-		COUNT(*) AS number_of_patients,
-		SUM(COUNT(*)) OVER (PARTITION BY p.postcode_area) AS total_patients_per_postcode
-	FROM 
-		dim_patient AS p
-	GROUP BY 
-		p.postcode_area, 
-		p.gender
-),
-ranked_postcode_areas AS (
-    SELECT 
-        pc.postcode_area,
-		pc.gender,
-		pc.number_of_patients,
-        pc.total_patients_per_postcode,
-        DENSE_RANK() OVER (ORDER BY pc.total_patients_per_postcode DESC) AS postcode_rank
-    FROM 
-        patient_counts AS pc
-)
-SELECT 
-    rp.postcode_area,
-	rp.gender,
-	rp.number_of_patients,
-    rp.total_patients_per_postcode,
-    rp.postcode_rank
-FROM 
-    ranked_postcode_areas AS rp
-WHERE 
-    rp.postcode_rank <= 2
-ORDER BY 
-    rp.postcode_rank
-
-
--- Part 3 or 3:
--- >>>>>>>>>>>>>>>>NOTE: refer to investigating.sql to see how the final solution was refined to reduce duplicate entries<<<<<<<<<<<<<<
-
--- Patients should have:
-
--- Current diagnosis of asthma, i.e. have current observation in their medical record with relevant clinical codes from 
--- asthma refset (refsetid 999012891000230104), and not resolved
--- Have been prescribed medication from the list below, or any medication containing these ingredients (i.e. need to find 
--- child clinical codes), in the last 30 years:
--- Formoterol Fumarate (codeid 591221000033116, SNOMED concept id 129490002)
--- Salmeterol Xinafoate (codeid 717321000033118, SNOMED concept id 108606009)
--- Vilanterol (codeid 1215621000033114, SNOMED concept id 702408004)
--- Indacaterol (codeid 972021000033115, SNOMED concept id 702801003)
--- Olodaterol (codeid 1223821000033118, SNOMED concept id 704459002)
-
--- AND should be excluded if:
-
--- Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
--- Currently weight less than 40kg (SNOMED concept id 27113001)
--- Currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
-
--- Only patients that have not opted out of taking part in research or sharing their medical record should be invited to participate (type 1 opt out, connected care opt out)
-
--- You will need to use a combination of the patient, observation, medication and clinical code information for a complete picture of a medical record. You should aim for your code to return a list of eligible patients with information on their organisation, registration id, patient id, full name, postcode, age, and gender.
-
--- Step 1: Create a new table with the results of the query
-CREATE TABLE new_query_answer AS
 
 WITH patient_counts AS (
 	SELECT 
@@ -147,7 +62,11 @@ list_of_patient_criteria AS (
 		c.code_id AS c_code_id,
 		c.refset_simple_id AS c_refset_simple_id,
 		c.emis_term AS c_emis_term,
-		c.snomed_concept_id AS c_snomed_concept_id
+		c.snomed_concept_id AS c_snomed_concept_id,
+		prd.emis_term AS prd_emis_term, 					-- VC
+		d.emis_term AS d_emis_term,							--VC
+		(m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years')) AS m_authorisedissues_authorised_date_lessthanequalto_30years,
+		d.parent_code_id AS d_parent_code_id
 	FROM 
 		dim_patient AS p
 	JOIN 
@@ -219,17 +138,83 @@ filtered_patient_criteria AS (
         lpc.patient_id = pnn.patient_id
     WHERE 
         pnn.patient_id IS NULL OR lpc.o_consultation_source_emis_original_term IS NOT NULL
-),
+)
 -- organisation, registration id, patient id, full name, postcode, age, and gender.
-query_answer AS (
-	SELECT DISTINCT
+SELECT DISTINCT
 	fpc.o_consultation_source_emis_original_term AS o_fpc_organisation,
 	p.registration_guid AS p_registration_id,
 	p.patient_id AS p_patient_id,
 	p.patient_givenname || ' ' || p.patient_surname AS p_full_name,
 	p.postcode AS p_postcode,
 	p.age AS p_age,
-	p.gender AS p_gender
+	p.gender AS p_gender,
+	p.postcode_area,																-- postcode area check
+	(lpc.c_refset_simple_id::bigint) AS c_lpc_refset_simple_id,						-- refset check >>>>>>>>>>NOTE: Need to confirm with manager. The numbers seem all the same and doesn't make sense
+	(cc.refset_simple_id::bigint) AS cc_refset_simple_id_bigint,					-- refset check >>>>>>>>>>NOTE: Need to confirm with manager.joined to dim_clinical_codes with refset_simple_id cast to bigint to cross ref with c_lpc_refset_simple_id
+	cc.refset_simple_id AS cc_refset_simple_id_double_precision,					-- refset check >>>>>>>>>>NOTE: Need to confirm with manager.joined to dim_clinical_codes with refset_simple_id left as double precision to cross ref with c_lpc_refset_simple_id
+	cc.parent_code_id AS cc_parent_code_id,											-- to check with code_id
+	ta.postcode_rank,																-- area rank check
+    CASE 
+        WHEN lpc.c_refset_simple_id = 999012891000230104 THEN TRUE
+        ELSE FALSE
+    END AS c_lpc_refset_simple_id_999012891000230104_has_asthma, 					-- current asthma diagnosis check
+    CASE
+        WHEN lpc.c_emis_term NOT ILIKE '%Asthma resolved%' THEN TRUE
+        ELSE FALSE
+    END AS c_lpc_emis_term_unresolved_asthma, 										-- unresolved asthma check
+    lpc.m_authorisedissues_authorised_date_lessthanequalto_30years,					-- medication prescribed within last 30 years check 
+    lpc.d_code_id AS d_lpc_code_id,													-- code id check
+	lpc.prd_code_id AS prd_lpc_code_id_child_clinical,								-- code id check
+    lpc.d_snomed_concept_id AS d_lpc_snomed_concept_id,								-- code id check
+    CASE
+        WHEN (lpc.d_code_id, lpc.d_snomed_concept_id) IN (
+            (591221000033116, 129490002), -- Formoterol Fumarate
+            (717321000033118, 108606009), -- Salmeterol Xinafoate
+            (1215621000033114, 702408004), -- Vilanterol
+            (972021000033115, 702801003), -- Indacaterol
+            (1223821000033118, 704459002) -- Olodaterol
+        ) THEN TRUE
+        ELSE FALSE
+    END AS d_lpc_code_id_and_d_lpc_snomed_concept_id_filtered, 						-- specific medications check
+	CASE 
+		WHEN lpc.c_refset_simple_id != 999004211000230104 THEN TRUE
+        ELSE FALSE
+    END AS lpc_refset_999004211000230104_non_smoker, 								-- exclude if current smoker check
+-- 	CASE 
+--         WHEN lpc.c_emis_term NOT ILIKE '%smoker%' THEN TRUE 
+--         ELSE FALSE 
+--     END AS c_lpc_emis_term_not_smoker, -- not a smoker check. NOTE: refset missing 999004211000230104 issue flagged. Hence filtered on word.
+    CASE
+        WHEN lpc.c_snomed_concept_id != 27113001 THEN TRUE
+        ELSE FALSE
+    END AS c_lpc_snomed_concept_id_not_27113001_ismorethan40kg, 					-- check patient does not weigh less than 40 kg
+	CASE 
+		WHEN lpc.c_refset_simple_id != 999011571000230107 THEN TRUE
+        ELSE FALSE
+    END AS lpc_refset_999011571000230107_no_COPD, 									-- no COPD check
+--     CASE
+--         WHEN lpc.c_emis_term NOT ILIKE '%COPD%' THEN TRUE
+--         ELSE FALSE
+--     END AS c_lpc_emis_term_no_COPD, -- patient does not have COPD
+    CASE
+        WHEN lpc.o_emis_original_term NOT ILIKE '%Declined consent for researcher to access clinical record%' THEN TRUE
+        ELSE FALSE
+    END AS o_lpc_emis_original_term_not_opted_out1, 									-- the patient has not opted out check
+    CASE
+        WHEN lpc.o_emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' THEN TRUE
+        ELSE FALSE
+    END AS o_lpc_emis_original_term_not_opted_out2, 									-- the patient has not opted out check
+    CASE
+        WHEN lpc.o_emis_original_term NOT ILIKE '%No consent for electronic record sharing%' THEN TRUE
+        ELSE FALSE
+    END AS o_lpc_emis_original_term_not_opted_out3,										-- the patient has not opted out check
+    CASE
+        WHEN lpc.o_emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%' THEN TRUE
+        ELSE FALSE
+    END AS no_refused_consent_for_local_uploado_lpc_emis_original_term_not_opted_out4,	-- the patient has not opted out check
+	lpc.c_emis_term AS lpc_c_emis_term,												-- validity check
+	lpc.prd_emis_term AS lpc_prd_emis_term,											-- validity check
+	lpc.d_emis_term AS lpc_d_emis_term												-- validity check
 FROM 
 	dim_patient as p
 JOIN 
@@ -252,29 +237,14 @@ JOIN
     filtered_patient_criteria AS fpc
 ON
     p.patient_id = fpc.patient_id
-
+JOIN
+	dim_clinical_codes AS cc
+ON
+	lpc.d_parent_code_id = cc.parent_code_id
 ORDER BY
 	p_postcode,
 	p_full_name,
 	p_patient_id,
 	o_fpc_organisation,
 	p_age,
-	p_gender
-)
--- organisation, registration id, patient id, full name, postcode, age, and gender.
-SELECT DISTINCT
-	a.o_fpc_organisation AS organisation,
-	a.p_registration_id AS registration_id,
-	a.p_patient_id AS patient_id,
-	a.p_full_name AS full_name,
-	a.p_postcode AS postcode,
-	a.p_age AS age,
-	a.p_gender AS gender
-FROM 
-	query_answer AS a;
-
--- Step 2: Drop the old table if it exists
-DROP TABLE IF EXISTS query_answer;
-
--- Step 3: Rename the new table to the desired name
-ALTER TABLE new_query_answer RENAME TO query_answer;
+	p_gender;

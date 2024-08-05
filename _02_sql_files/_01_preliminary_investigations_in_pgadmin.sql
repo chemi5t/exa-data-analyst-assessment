@@ -171,6 +171,27 @@ ON o.registration_guid = p.registration_guid
 RIGHT JOIN conditions as c
 ON c.code_id = o.emis_code_id;
 
+
+-------------------------------
+-------------------------------
+
+-- normalisaion of clinical_codes tables 
+
+SELECT *
+FROM drugs -- has 5 rows
+
+SELECT *
+FROM product -- has 147 rows
+
+SELECT *
+FROM conditions -- has 434 rows
+
+-- above combined has 586 rows. Same as in the original dim_clinical_codes
+
+SELECT *
+FROM dim_clinical_codes -- 586 rows
+
+
 -------------------------------
 -------------------------------
 
