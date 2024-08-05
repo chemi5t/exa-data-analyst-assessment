@@ -372,7 +372,7 @@ python main.py
     - Apply criteria to derive a list of eligible patients.
     - SQL scripts: [_02_sql_files/_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) (part 2)
     - Table: [Q3 results](Q3.csv)
-    - Partial view of ERD: ![Partial view of ERD](ERD_PNG.png)
+    - ERD: ![ERD](ERD_PNG.png)
 
 # Project File Structure
 
