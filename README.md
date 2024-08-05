@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
 The methods within the `main.py` script utilises the `data_cleaning.py`, `data_extraction.py` and `database_utils.py` files and imports the DataCleaning, DataExtractor, and DatabaseConnector classes and uploads the clean data to the centralised database (`emis_data_analysis`) to complete the ETL pipeline. The combined .csv files were too large to upload to GitHub but data uploaded into Panda DataFrames and uploaded to postgreSQL. An issue was noted during the combining of .csv files from the `data\observation` folder. A warning in the terminal showed index column 2 to have mixed data types that could lead to issues with quries later and thus cleaned inline with the ETL process. Also only the unnumbered .csv files in `data\observation` and  `data\medication` .csv files contained the column headers. This was noted and a method created to deal with this during the .csv file combining phase.
 
-After the `main.py` execution, various tables were created, updated and altered followed by creation of the star schema ([_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql)) and its `ERD` (see Milestone 3). A link to the clinical_codes_df was not possible with the 4 tables stored in the database and so this table required normalisation into 3 smaller tables; drugs, products and conditions. From these links and tables joins could be made throughout the tables to then perform the required queries. 
+After the `main.py` execution, various tables were created, updated and altered followed by creation of the schema ([_02_sql_files/_02_schema.sql](_02_sql_files/_02_schema.sql)) and its `ERD` (see Milestone 3). A link to the clinical_codes_df was not possible with the 4 tables stored in the database and so this table required normalisation into 3 smaller tables; drugs, products and conditions. From these links and tables joins could be made throughout the tables to then perform the required queries. 
 
 The [SQL](_02_sql_files/_03_sql_queries.sql) query (Q3) provided performs analysis of patient data based on specific criteria to give **56 rows** (**56 different patients**). It filters patients with asthma who meet various conditions regarding medication, smoking status, weight, COPD diagnosis and consent to share data.
 
@@ -302,6 +302,9 @@ SELECT DISTINCT
             - age
             - gender
 
+# Project Architecture
+The project is organised into two main parts, each addressing the specific tasks outlined in the assessment.
+
 # Installation instructions
 From the main/root directory of the project folder, follow these steps. Clone the repository:
 
@@ -339,18 +342,14 @@ From the main/root directory of the project folder, follow these steps. Clone th
 python main.py
 ```
 
-2. Execute queries in [_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql) script via pgAdmin 4 to perform various CREATE, UPDATE, ALTER commands.
+2. Execute queries in [_02_sql_files/_02_schema.sql](_02_sql_files/_02_schema.sql) script via pgAdmin 4 to perform various CREATE, UPDATE, ALTER commands.
 
-3. Execute final query within [_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql) script to create star schema via pgAdmin4 or SQLTools in VS Code; or any other tool you prefer for interacting with PostgreSQL. This sets up the database, `emis_data_analysis`. ERD can be found in milestone 3.
+3. Execute final query within [_02_sql_files/_02_schema.sql](_02_sql_files/_02_schema.sql) script to create schema via pgAdmin4 or SQLTools in VS Code; or any other tool you prefer for interacting with PostgreSQL. This sets up the database, `emis_data_analysis`. ERD can be found in milestone 3.
 
 4. Execute [_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) script to get answers to Q1, Q2 and Q3.
 
 5. Execute [_04_validity_check_of_overall_query.sql](_02_sql_files/_04_validity_check_of_overall_query.sql) script to check validity of data to answer Q3. Also refer to [_01_preliminary_investigations_in_pgadmin.sql](_02_sql_files/_01_preliminary_investigations_in_pgadmin.sql) script for other validation checks.
 
-# Project Architecture
-The project is organised into two main parts, each addressing the specific tasks outlined in the assessment.
-
-# Usage Instructions
 - ## Part 1, Q1: Patient Demographics by Postcode Area
     - Run the SQL scripts located in the sql directory to identify patient counts by postcode area and gender distribution.
     - The results will help determine the best postcode areas for the target population.
@@ -441,7 +440,7 @@ EXA-DATA_ANALYST_ASSESSMENT/
 │       └── data_extraction.cpython-312.pyc
 └── _02_sql_files
     ├── _01_preliminary_investigations_in_pgadmin.sql
-    ├── _02_star_schema.sql                     [execute to create star schema and update/alter/create tables]
+    ├── _02_schema.sql                          [execute to create schema and update/alter/create tables]
     ├── _03_sql_queries.sql                     [execute to run Q1, Q2, Q3 queries plus save Q3 in .csv in root/]
     └── _04_validity_check_of_overall_query.sql [execute]
 ```
