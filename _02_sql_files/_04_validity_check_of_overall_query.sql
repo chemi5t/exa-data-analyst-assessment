@@ -51,7 +51,7 @@ top_areas AS (
 ),
 list_of_patient_criteria AS (
 	SELECT 
-		o.consultation_source_emis_original_term AS o_consultation_source_emis_original_term,		-- >>>>>>>>>>NOTE:Need to confirmed with mananger in terms of organisation
+		o.consultation_source_emis_original_term AS o_consultation_source_emis_original_term,		-- >>>>>>>>>>NOTE:Need to confirm with mananger in terms of organisation
 		p.patient_id,
 		m.emis_code_id AS med_emis_code_id,
 		m.authorisedissues_authorised_date AS m_authorisedissues_authorised_date,		
@@ -63,10 +63,10 @@ list_of_patient_criteria AS (
 		c.refset_simple_id AS c_refset_simple_id,
 		c.emis_term AS c_emis_term,
 		c.snomed_concept_id AS c_snomed_concept_id,
-		prd.emis_term AS prd_emis_term, 					-- VC
-		d.emis_term AS d_emis_term,							--VC
-		(m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years')) AS m_authorisedissues_authorised_date_lessthanequalto_30years,
-		d.parent_code_id AS d_parent_code_id
+		prd.emis_term AS prd_emis_term, 					-- prd_emis_term check
+		d.emis_term AS d_emis_term,							-- d_emis_term check
+		(m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years')) AS m_authorisedissues_authorised_date_lessthanequalto_30years, -- check authorisedissues_authorised_date
+		d.parent_code_id AS d_parent_code_id				-- check 
 	FROM 
 		dim_patient AS p
 	JOIN 
@@ -107,7 +107,7 @@ list_of_patient_criteria AS (
 		c.refset_simple_id != 999004211000230104 AND 				-- exclude if current smoker
 		-- c.emis_term NOT ILIKE '%smoker%' AND 					-- not a smoker >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999004211000230104 found so filtered on term to be excluded --> Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
 		c.snomed_concept_id != 27113001 AND 						-- currently weigh less than 40 kg 
-		c.refset_simple_id != 999011571000230107 AND				-- exclude COPD diagnosis that shows unresolved >>>>>>>>>>NOTE: Need to confirm with manager. All filtered comments suggest unresolved. No comments about being 'resolved' found. Maybe add a filter to such output to exclude if 'resolved' asssicated with such a code?
+		c.refset_simple_id != 999011571000230107 AND				-- exclude COPD diagnosis that shows unresolved >>>>>>>>>>NOTE: Need to confirm with manager. All filtered comments suggest unresolved. No comments about being 'resolved' found.
 		-- c.emis_term NOT ILIKE '%COPD%' AND 						-- and COPD not resolved >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999011571000230107 found so filtered on term to be excluded --> Should not currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
 																-- >>>>>>>>>>NOTE: need to address whether the COPD is resolved or not as this has not been defined
 

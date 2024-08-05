@@ -1,5 +1,3 @@
--- SAVE THIS
-
 SELECT *
 FROM dim_patient;
 
@@ -73,6 +71,8 @@ UPDATE dim_patient
 		ELSE NULL
 	END;
 --------------------------------------------------------------------------
+-- STAR SCHEMA QUERY
+
 ALTER TABLE drugs ADD PRIMARY KEY (code_id);
 
 ALTER TABLE product 

@@ -4,6 +4,268 @@
 
 The EMIS Technical Assessment project aims to demonstrate the ability to design scalable, usable and readable SQL code. The primary objectives include identifying patient by area using their postcodes and deriving a list of eligible patients for a local research study based on specific medical criteria.
 
+In the /root (EXA-DATA_ANALYST_ASSESSMENT) folder, the [main.py](main.py) file runs the various methods shown below that perform a conbination of the Extract, Transform, and Load (ETL) process for the 4 tables.
+
+```python
+if __name__ == "__main__":
+    
+    try:
+        print("################################################## Medication Extraction ##################################################")
+
+        medication_df = medication_extraction()
+
+        print("################################################## Observation Extraction and Transformation ##################################################")
+
+        observation_df = observation_extraction_transformation()
+
+        print("################################################## Clinical Codes Extraction ##################################################")
+
+        clinical_codes_df = clinical_extraction()
+
+        print("################################################## Patient Extraction ##################################################")
+
+        patient_df = patient_extraction()
+
+        print("################################################## Upload to postgresSQL (pgAdmin4) ##################################################")
+
+        # List of DataFrames and their corresponding table names
+        df_list_to_upload = [
+            {"dataframe": medication_df, "table_name": "dim_medication"},
+            {"dataframe": observation_df, "table_name": "dim_observation"},
+            {"dataframe": clinical_codes_df, "table_name": "dim_clinical_codes"},
+            {"dataframe": patient_df, "table_name": "dim_patient"}
+        ]
+                
+        # Upload DataFrames to PostgreSQL
+        data_connector.upload_list_to_db(df_list_to_upload, engine = postgres_engine)
+
+        print("################################################## ETL completed ##################################################")
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+    except ValueError as e:
+        print(f"Value Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+```
+
+The methods within the `main.py` script utilises the `data_cleaning.py`, `data_extraction.py` and `database_utils.py` files and imports the DataCleaning, DataExtractor, and DatabaseConnector classes and uploads the clean data to the centralised database (`emis_data_analysis`) to complete the ETL pipeline. The combined .csv files were too large to upload to GitHub but data uploaded into Panda DataFrames and uploaded to postgreSQL. An issue was noted during the combining of .csv files from the `data\observation` folder. A warning in the terminal showed index column 2 to have mixed data types that could lead to issues with quries later and thus cleaned inline with the ETL process. Also only the unnumbered .csv files in `data\observation` and  `data\medication` .csv files contained the column headers. This was noted and a method created to deal with this during the .csv file combining phase.
+
+After the `main.py` execution, various tables were created, updated and altered followed by creation of the star schema ([_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql)) and its `ERD` (see Milestone 3). A link to the clinical_codes_df was not possible with the 4 tables stored in the database and so this table required normalisation into 3 smaller tables; drugs, products and conditions. From these links and tables joins could be made throughout the tables to then perform the required queries. 
+
+The [SQL](_02_sql_files/_03_sql_queries.sql) query (Q3) provided performs analysis of patient data based on specific criteria to give **56 rows** (**56 different patients**). It filters patients with asthma who meet various conditions regarding medication, smoking status, weight, COPD diagnosis and consent to share data.
+
+Here's a summary of the query:
+
+```sql
+WITH patient_counts AS (
+	SELECT 
+		p.patient_id,
+		p.postcode_area,
+		p.gender,
+		COUNT(*) AS number_of_patients,
+		SUM(COUNT(*)) OVER (PARTITION BY p.postcode_area) AS total_patients_per_postcode
+	FROM 
+		dim_patient AS p
+	GROUP BY 
+		p.postcode_area, 
+		p.gender,
+		p.patient_id
+),
+ranked_postcode_areas AS (
+    SELECT 
+		pc.patient_id,
+        pc.postcode_area,
+		pc.gender,
+		pc.number_of_patients,
+        pc.total_patients_per_postcode,
+        DENSE_RANK() OVER (ORDER BY pc.total_patients_per_postcode DESC) AS postcode_rank
+    FROM 
+        patient_counts AS pc
+),
+top_areas AS (
+	SELECT 
+		rpa.patient_id,
+		rpa.postcode_area,
+		rpa.gender,
+		rpa.number_of_patients,
+		rpa.total_patients_per_postcode,
+		rpa.postcode_rank
+	FROM 
+		ranked_postcode_areas AS rpa
+	WHERE 
+		rpa.postcode_rank <= 2
+	ORDER BY 
+		rpa.postcode_rank
+),
+list_of_patient_criteria AS (
+	SELECT 
+		o.consultation_source_emis_original_term AS o_consultation_source_emis_original_term,		-- >>>>>>>>>>NOTE:Need to confirmed with mananger in terms of organisation
+		p.patient_id,
+		m.emis_code_id AS med_emis_code_id,
+		m.authorisedissues_authorised_date AS m_authorisedissues_authorised_date,		
+		prd.code_id AS prd_code_id,
+		d.code_id AS d_code_id,
+		d.snomed_concept_id AS d_snomed_concept_id,
+		o.emis_original_term AS o_emis_original_term,
+		c.code_id AS c_code_id,
+		c.refset_simple_id AS c_refset_simple_id,
+		c.emis_term AS c_emis_term,
+		c.snomed_concept_id AS c_snomed_concept_id
+	FROM 
+		dim_patient AS p
+	JOIN 
+		dim_medication AS m
+	ON 
+		p.registration_guid = m.registration_guid
+	JOIN 
+		product AS prd
+	ON 
+		m.emis_code_id = prd.code_id
+	JOIN 
+		drugs AS d
+	ON 
+		prd.parent_code_id = d.code_id
+	JOIN 
+		dim_observation AS o
+	ON 
+		p.registration_guid = o.registration_guid
+	JOIN 
+		conditions as c
+	ON 
+		o.emis_code_id = c.code_id
+	WHERE 
+		-- patients should have:
+
+		c.refset_simple_id = 999012891000230104 AND 			-- has asthma 
+		c.emis_term NOT ILIKE '%Asthma resolved%' AND 			-- and asthma not resolved >>>>>>>>>>NOTE: need to confirm with manager
+		m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years') AND		-- in the last 30 years only >>>>>>>>>>NOTE:Need to confirmed with mananger. Is the correct column selected?
+		(d.code_id, d.snomed_concept_id) IN (
+			(591221000033116, 129490002), 						-- Formoterol Fumarate
+			(717321000033118, 108606009), 						-- Salmeterol Xinafoate
+			(1215621000033114, 702408004), 						-- Vilanterol
+			(972021000033115, 702801003), 						-- Indacaterol
+			(1223821000033118, 704459002) 						-- Olodaterol
+		) AND
+
+		-- AND to exclude if:
+		c.refset_simple_id != 999004211000230104 AND 				-- exclude if current smoker
+		-- c.emis_term NOT ILIKE '%smoker%' AND 					-- not a smoker >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999004211000230104 found so filtered on term to be excluded --> Currently a smoker i.e.  have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)
+		c.snomed_concept_id != 27113001 AND 						-- currently weigh less than 40 kg 
+		c.refset_simple_id != 999011571000230107 AND				-- exclude COPD diagnosis that shows unresolved >>>>>>>>>>NOTE: Need to confirm with manager. All filtered comments suggest unresolved. No comments about being 'resolved' found. Maybe add a filter to such output to exclude if 'resolved' asssicated with such a code?
+		-- c.emis_term NOT ILIKE '%COPD%' AND 						-- and COPD not resolved >>>>>>>>>>NOTE: Need to confirm with manager. No such refsetid 999011571000230107 found so filtered on term to be excluded --> Should not currently have a COPD diagnosis i.e. have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107), and not resolved.
+																-- >>>>>>>>>>NOTE: need to address whether the COPD is resolved or not as this has not been defined
+
+		-- only patients that have not opted out of taking part in research or sharing their medical records (searched using DISTINCT on colomun to see possible entries)
+
+		o.emis_original_term NOT ILIKE '%Declined consent for researcher to access clinical record%' AND  			-- >>>>>>>>>>NOTE:Need to confirmed with mananger
+		o.emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' AND 
+		o.emis_original_term NOT ILIKE '%No consent for electronic record sharing%' AND 
+		o.emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%'
+),
+patient_with_non_null AS (
+    SELECT DISTINCT
+        lpc.patient_id
+    FROM 
+        list_of_patient_criteria AS lpc
+    WHERE 
+        lpc.o_consultation_source_emis_original_term IS NOT NULL
+),
+filtered_patient_criteria AS (
+    SELECT DISTINCT
+        lpc.patient_id,
+        lpc.o_consultation_source_emis_original_term
+    FROM 
+        list_of_patient_criteria AS lpc
+    LEFT JOIN 
+        patient_with_non_null AS pnn 
+    ON 
+        lpc.patient_id = pnn.patient_id
+    WHERE 
+        pnn.patient_id IS NULL OR lpc.o_consultation_source_emis_original_term IS NOT NULL
+),
+-- organisation, registration id, patient id, full name, postcode, age, and gender.
+query_answer AS (
+	SELECT DISTINCT
+	fpc.o_consultation_source_emis_original_term AS o_fpc_organisation,
+	p.registration_guid AS p_registration_id,
+	p.patient_id AS p_patient_id,
+	p.patient_givenname || ' ' || p.patient_surname AS p_full_name,
+	p.postcode AS p_postcode,
+	p.age AS p_age,
+	p.gender AS p_gender
+FROM 
+	dim_patient as p
+JOIN 
+	list_of_patient_criteria as lpc
+ON
+	p.patient_id = lpc.patient_id
+JOIN
+	patient_counts as pc
+ON 
+	lpc.patient_id = pc.patient_id
+JOIN
+	ranked_postcode_areas as rpa
+ON
+	pc.patient_id = rpa.patient_id
+JOIN
+	top_areas as ta
+ON
+	rpa.patient_id = ta.patient_id
+JOIN 
+    filtered_patient_criteria AS fpc
+ON
+    p.patient_id = fpc.patient_id
+
+ORDER BY
+	p_postcode,
+	p_full_name,
+	p_patient_id,
+	o_fpc_organisation,
+	p_age,
+	p_gender
+)
+-- organisation, registration id, patient id, full name, postcode, age, and gender.
+SELECT DISTINCT
+	a.o_fpc_organisation AS organisation,
+	a.p_registration_id AS registration_id,
+	a.p_patient_id AS patient_id,
+	a.p_full_name AS full_name,
+	a.p_postcode AS postcode,
+	a.p_age AS age,
+	a.p_gender AS gender
+FROM 
+	query_answer AS a;
+
+```
+Comments can be seen throughout the above query for discussion with the manager; together with suggestions where needed for clarity. The main query answer to Q3 has been saved as [Q3.csv](Q3.csv). Duplicate unessessary files were found in this final query so additional CTE tables were created to help filter away noise/duplicate unessessary data. All investigations of the SQL can be found in a combination of cleaning*.ipynb files for each table, [_02_sql_files/_01_preliminary_investigations_in_pgadmin.sql](_02_sql_files/_01_preliminary_investigations_in_pgadmin.sql), [_02_sql_files/_04_validity_check_of_overall_query.sql](_02_sql_files/_04_validity_check_of_overall_query.sql) and the main query itself [_02_sql_files/_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql). You will find comments where required and sensible variable names, a number of CTEs and some trial and error along the way to come to the final query searches. One thing to note was the lack of clarity with regard to `refset_simple_id` column typically found in clinical_codes DF. 
+
+Overall things to check/discuss with manager before confirming final production query code:
+
+```sql
+list_of_patient_criteria AS (
+	SELECT 
+		o.consultation_source_emis_original_term AS o_consultation_source_emis_original_term,		-- >>>>>>>>>>NOTE:Need to confirm with mananger in terms of organisation
+
+        (m.authorisedissues_authorised_date::date >= (CURRENT_DATE - INTERVAL '30 years')) AS m_authorisedissues_authorised_date_lessthanequalto_30years, -- check authorisedissues_authorised_date
+
+        c.refset_simple_id != 999011571000230107 AND				-- exclude COPD diagnosis that shows unresolved >>>>>>>>>>NOTE: Need to confirm with manager. All filtered comments suggest unresolved. No comments about being 'resolved' found.
+
+		o.emis_original_term NOT ILIKE '%Declined consent for researcher to access clinical record%' AND  			-- >>>>>>>>>>NOTE:Need to confirmed with mananger
+		o.emis_original_term NOT ILIKE '%Declined consent to share patient data with specified third party%' AND 
+		o.emis_original_term NOT ILIKE '%No consent for electronic record sharing%' AND 
+		o.emis_original_term NOT ILIKE '%Refused consent for upload to local shared electronic record%'
+```
+```sql
+)
+-- organisation, registration id, patient id, full name, postcode, age, and gender.
+SELECT DISTINCT
+	(lpc.c_refset_simple_id::bigint) AS c_lpc_refset_simple_id,						-- refset check >>>>>>>>>>NOTE: Need to confirm with manager. The numbers seem all the same and doesn't make sense
+	(cc.refset_simple_id::bigint) AS cc_refset_simple_id_bigint,					-- refset check >>>>>>>>>>NOTE: Need to confirm with manager.joined to dim_clinical_codes with refset_simple_id cast to bigint to cross ref with c_lpc_refset_simple_id
+	cc.refset_simple_id AS cc_refset_simple_id_double_precision,					-- refset check >>>>>>>>>>NOTE: Need to confirm with manager.joined to dim_clinical_codes with refset_simple_id left as double precision to cross ref with c_lpc_refset_simple_id							
+```
+
+
 ## Project Tasks
 
 - **Part 1: Patients by Area using Postcode**
@@ -26,268 +288,174 @@ The EMIS Technical Assessment project aims to demonstrate the ability to design 
         - Exclusion Criteria:
             - Patients who are current smokers (have current observation with relevant clinical codes from smoker refset (refsetid 999004211000230104)).
             - Patients who currently weigh less than 40kg (SNOMED concept id 27113001).
-            - Patients with a current COPD diagnosis (have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107)).
-            - Ensure diagnoses are current and not resolved.
+            - Patients with a current COPD diagnosis (have current observation in their medical record with relevant clinical codes from COPD refset (refsetid 999011571000230107)and not resolved.)
         - Opt-Out Criteria:
             - Only include patients who have not opted out of taking part in research or sharing their medical records (type 1 opt out, connected care opt out).
     
     - Output:
         - The final list of eligible patients should include the following information:
-            - Organisation
-            - Registration ID
-            - Patient ID
-            - Full Name
-            - Postcode
-            - Age
-            - Gender
-
+            - organisation
+            - registration_id
+            - patient_id
+            - full_name
+            - postcode
+            - age
+            - gender
 
 # Installation instructions
 From the main/root directory of the project folder, follow these steps. Clone the repository:
 
 1. cd into the directory and then in the command line:
     
-bash
-    git clone https://github.com/chemi5t/pinterest-data-pipeline905.git
+```bash
+    git clone https://github.com/chemi5t/exa-data-analyst-assessment.git
+```
 
 2. Set up a virtual environment for the project:
     
-bash
-    conda create --name pinterest_env
+```bash
+    conda create --name emis_env
+```
 
-    
-bash
-    conda activate pinterest_env
+```bash
+    conda activate emis_env
+```
 
 3. Install the required Python packages via the [requirments.txt](requirements.txt) file:
     
-bash
+```bash
     pip install -r requirements.txt
+```
 
-4. Create and set up AWS and Databricks accounts.
-5. Save your database credentials to db_creds.yaml for security and to enable data extraction/uploads from/to various sources. 
+4. Set up a PostgreSQL database named emis_data_analysis using a client of your choice i.e. pgAdmin 4 or SQLTools.
 
-## Architecture diagram:
-
-This summary outlines the tasks and processes involved in setting up, sending, reading, and processing streaming data using AWS Kinesis and Databricks.
-
-![Architecture digram](Images/28_CloudPinterestPipeline.jpeg)
+5. Save your database credentials to db_creds.yaml for security and to enable data upload to pgAdmin4.
 
 # Usage instructions
 
-1. Data emulation
-    - Milestone 1 and 2
+1. Run the `main.py` to execute the data extraction, cleaning, and database creation processes in the `/root` folder via the terminal in VS Code.
 
-2. Batch processing
-    - Milestone 3 to 8
+```
+python main.py
+```
 
-3. Stream Processing
-    - Milestone 9
+2. Execute queries in [_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql) script via pgAdmin 4 to perform various CREATE, UPDATE, ALTER commands.
 
-4. Data Querying 
-    - [Milestone 7 SQL queries](databricks/_3_pinterest_queries.ipynb)
+3. Execute final query within [_02_sql_files/_02_star_schema.sql](_02_sql_files/_02_star_schema.sql) script to create star schema via pgAdmin4 or SQLTools in VS Code; or any other tool you prefer for interacting with PostgreSQL. This sets up the database, `emis_data_analysis`. ERD can be found in milestone 3.
 
-# Summary of Project Milestones 
+4. Execute [_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) script to get answers to Q1, Q2 and Q3.
 
-## Data Emulation:
+5. Execute [_04_validity_check_of_overall_query.sql](_02_sql_files/_04_validity_check_of_overall_query.sql) script to check validity of data to answer Q3. Also refer to [_01_preliminary_investigations_in_pgadmin.sql](_02_sql_files/_01_preliminary_investigations_in_pgadmin.sql) script for other validation checks.
 
-- ### **Outcomes from Milestone 1 (Setting up the environment)**
+# Project Architecture
+The project is organised into two main parts, each addressing the specific tasks outlined in the assessment.
 
-GitHub was successfully set up to allow the project to be saved and tracked for changes via Git and GitHub. VSCode was used for writing the code.
+# Usage Instructions
+- ## Part 1, Q1: Patient Demographics by Postcode Area
+    - Run the SQL scripts located in the sql directory to identify patient counts by postcode area and gender distribution.
+    - The results will help determine the best postcode areas for the target population.
 
-This project uses different services running in the AWS Cloud and thus an AWS Cloud Account is required. 
+- ## Part 2, Q2 and Q3: Identifying Eligible Patients for Research Study
+    - Use the SQL scripts to select the 2 most suitable postcode areas.
+    - Apply the medical criteria to derive a list of eligible patients.
+    - Ensure the final list includes patients who have not opted out of research or data sharing.
 
-- ### **Outcomes from Milestone 2 (Creating Pinterest infrastructure via AWS RDS database)**
+# Project Milestones Summary
+- ## Milestone 1: Patient Demographics - Data Extraction and Initial Analysis
+    - Extract patient data and analyse the distribution by postcode area and gender.
+    - SQL scripts: [_02_sql_files/_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) (part 1)
+    - Table: [Q1 results](Q1.csv)
+- ## Milestone 2: Identifying Eligible Patients - Selecting Suitable Postcode Areas
+    - Identify the 2 postcode areas with the largest patient counts.
+    - SQL scripts: [_02_sql_files/_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) (part 2)
+    - Table: [Q2 results](Q2.csv)
+- ## Milestone 3: Deriving Eligible Patient List
+    - Apply criteria to derive a list of eligible patients.
+    - SQL scripts: [_02_sql_files/_03_sql_queries.sql](_02_sql_files/_03_sql_queries.sql) (part 2)
+    - Table: [Q3 results](Q3.csv)
+    - Partial view of ERD: ![Partial view of ERD](ERD_PNG.png)
 
-The Pinterest infrastructure is replicated to resemble the environment of a data engineer at Pinterest. 
+# Project File Structure
 
-A user_posting_emulation_basic.py script is developed, containing RDS database login credentials. The RDS database comprises three tables (pinterest_data, geolocation_data, and user_data) mimicking data obtained from user POST requests to Pinterest:
-
-- pinterest_data: Information about posts updated to Pinterest.
-- geolocation_data: Geographic data corresponding to posts in pinterest_data.
-- user_data: User information linked to posts in pinterest_data.
-
-A db_creds.yaml file is created to store database credentials securely and excluded from version control using .gitignore.
-
-The script continuously executes, emulating user posting behavior by connecting to the RDS database via SQLAlchemy. It fetches random rows from each table (pin_result, geo_result, and user_result), simulating user activity. The key-value pairing in the dictionaries are noted for later analysis.
-
-python
-(base) 
-chemi@DELL-laptop MINGW64 ~/AiCore_Projects/pinterest-data-pipeline905 (main)
-$ python user_posting_emulation_basic.py 
-**************************************************
-pin result:  {'index': 7528, 'unique_id': 'fbe53c66-3442-4773-b19e-d3ec6f54dddf', 'title': 'No Title Data Available', 'description': 'No description available Story format', 'poster_name': 'User Info Error', 'follower_count': 'User Info Error', 'tag_list': 'N,o, ,T,a,g,s, ,A,v,a,i,l,a,b,l,e', 'is_image_or_video': 'multi-video(story page format)', 'image_src': 'Image src error.', 'downloaded': 0, 'save_location': 'Local save in /data/mens-fashion', 'category': 'mens-fashion'}
-
-geo result:  {'ind': 7528, 'timestamp': datetime.datetime(2020, 8, 28, 3, 52, 47), 'latitude': -89.9787, 'longitude': -173.293, 'country': 'Albania'}
-
-user result:  {'ind': 7528, 'first_name': 'Abigail', 'last_name': 'Ali', 'age': 20, 'date_joined': datetime.datetime(2015, 10, 24, 11, 23, 51)}
-**************************************************
-
-
-Next, log into the AWS console keeping safe your credentials:
-
-- AWS Account ID: <your_AWSId>
-- IAM user name: <your_UserId>
-- Password: <your_Password>
-- The above are values to be replaced by your own and where ever mentioned herein
-
-When using any of the AWS services, make sure to work in us-east-1 region throughout the project.
-
-## Batch Processing:
-
-- ### **Outcomes from Milestone 3 (Batch processing: Configuring the EC2 Kafka client)**
-
-Install Kafka and the IAM MSK authentication package on the client EC2 machine.
-Retrieve and note the IAM role ARN (<your_UserId>-ec2-access-role) for cluster authentication.
-Configure Kafka client for IAM authentication. Modify the client.properties file in the Kafka installation directory to enable AWS IAM authentication.
-Create Kafka topics by retrieving the Bootstrap servers string and the Plaintext Apache Zookeeper connection string from the MSK Management Console.
-Create three topics: 
-- <your_UserId>.pin for Pinterest posts data, 
-- <your_UserId>.geo for post geolocation data, and 
-- <your_UserId>.user for post user data.
-
-For further details follow - [Milestone 3 outline](documentations/milestone_3.md)
-
-- ### **Outcomes from Milestone 4 (Batch Processing: Connect a MSK cluster to a S3 bucket)**
-
-For this project it was not required to create a S3 bucket, an IAM role that allows you to write to this bucket or a VPC Endpoint to S3, as these had already been configured for the AWS account.
-
-In this milestone, MSK Connect is utilised to establish a connection between the MSK cluster and an S3 bucket, enabling automatic data storage for all cluster data.
-
-A custom plugin is created with MSK Connect.
-Navigate to the S3 console and locate the bucket associated with your <your_UserId> (user-<your_UserId>-bucket).
-Download the Confluent.io Amazon S3 Connector on your EC2 client and transfer it to the identified S3 bucket.
-Create a custom plugin named <your_UserId>-plugin in the MSK Connect console.
-Create a connector with MSK Connect named <your_UserId>-connector in the MSK Connect console.
-Configure the connector with the correct bucket name (user-<your_UserId>-bucket) and ensure the topics.regex field follows the format <your_UserId>.*.
-Assign the IAM role used for authentication to the MSK cluster (<your_UserId>-ec2-access-role) in the Access permissions tab.
-Upon completing these tasks, data passing through the IAM authenticated cluster will be automatically stored in the designated S3 bucket.
-
-For further details follow - [Milestone 4 outline](documentations/milestone_4.md)
-
-- ### **Outcomes from Milestone 5 (Batch Processing: Configuring an API in API Gateway):**
-This milestone focuses on building an API to replicate Pinterest's experimental data pipeline. The API will send data to the MSK cluster, which will then be stored in an S3 bucket using the previously configured connector.
-
-A Kafka REST proxy integration method is built for the API. A resource is created for the API to enable a PROXY integration.
-A HTTP ANY method is set up for the resource, ensuring the Endpoint URL reflects the correct PublicDNS of the EC2 machine associated with <your_UserId>.
-The API is deployed and the Invoke URL noted for future reference.
-
-The Kafka REST proxy is set up on the EC2 client by installing the Confluent package for the Kafka REST proxy on the EC2 client machine.
-The kafka-rest.properties file is configured to allow the REST proxy to perform IAM authentication to the MSK cluster.
-The REST proxy on the EC2 client machine is started.
-Then send data to the API after modifying the user_posting_emulation_basic.py script to user_posting_emulation_batch.py and send data to the Kafka topics via the API Invoke URL.
-Confirm data storage in the S3 bucket, observing the folder organisation created by the connector.
-
-For further details follow - [Milestone 5 outline](documentations/milestone_5.md)
-
-- ### **Outcomes from Milestone 6 (Batch processing: Databricks)**
-This milestone focuses on setting up a Databricks account and learning to read data from AWS into Databricks.
-
-Set up your own Databricks account followed by mounting the previously created S3 bucket to Databricks.
-Mount the desired S3 bucket to the Databricks account to access the batch data.
-The Databricks account has full access to S3, eliminating the need to create a new Access Key and Secret Access Key.
-Read data from the Delta table located at dbfs:/user/hive/warehouse/authentication_credentials.
-Ensure complete paths to JSON objects when reading from S3 (e.g. topics/<your_UserId>.pin/partition=0/).
-Create three DataFrames: 
-
-- df_pin for Pinterest post data
-- df_geo for geolocation data
-- df_user for user data
-
-This summary outlines the tasks involved in configuring Databricks, mounting an S3 bucket and reading data.
-
-For further details follow - [Milestone 6 outline](databricks/_1_mount_s3_to_databricks.ipynb)
-
-- ### **Outcomes from Milestone 7 (Batch processing: Spark on Databricks)**
-
-Perform data cleaning and computations using Spark on Databricks. Apply this to all 3 PySpark DataFrames:
-
-- df_pin for Pinterest post data
-- df_geo for geolocation data
-- df_user for user data
-
-For further details follow - [Milestone 7 df cleaning outline](databricks/_2_batch_data_processing_from_mounted_s3.ipynb)
-
-It was also demonstrated how valuable insights could be produced by joining the 3 dataframes via the execution of SQL queries.
-
-For further details follow - [Milestone 7 SQL quereis](databricks/_3_pinterest_queries.ipynb)
-
-- ### **Outcomes from Milestone 8 (Batch processing: AWS MWAA)**
-
-Databricks Workloads are orchestrated on AWS MWAA (Managed Workflows for Apache Airflow).
-
-Create and upload a DAG to a AWS MWAA environment. Access to a MWAA environment Databricks-Airflow-env and to its S3 bucket mwaa-dags-bucket had been provided. Thus, not required to create an API token in Databricks to connect to the AWS account, to set up the MWAA-Databricks connection or to create the requirements.txt file.
-
-An Airflow DAG was created that triggers a Databricks Notebook to be run on a specific schedule. This DAG was uploaded to the dags folder in the mwaa-dags-bucket with the follwoing naming, <your_UserId>_dag.py.
-
-Manually trigger the DAG and verify its successful execution.
-
-For further details follow - [Milestone 8 outline](documentations/milestone_8.md)
-
-## Stream Processing:
-
-- ### **Outcomes from Milestone 9 (Stream Processing: AWS Kinesis)**
-
-Finally for streaming data, data is sent to Kinesis and read into Databricks.
-
-Kinesis Data Streams is used to create three streams for the Pinterest data: 
-
-- streaming-<your_UserId>-pin
-- streaming-<your_UserId>-geo  
-- streaming-<your_UserId>-user
-
-An API is reconfigured with Kinesis Proxy Integration. This requires the creation of a new script, [user_posting_emulation_streaming.py](user_posting_emulation_streaming.py); that sends data from Pinterest tables to corresponding Kinesis streams via API requests.
-
-Databricks ([_4_streaming_data_processing](<databricks/_4_streaming_data_processing (2).ipynb>)) then cleans the ingests streamed data from Kenisis and writes it into delta tables.
-
-For further details follow - [Milestone 9 outline](documentations/milestone_9.md)
-
-# Project file structure
-
-txt
-PINTEREST-DATA-PIPELINE905/
-├── Images      [used in README.md]
-├── LICENSE.md
+```plaintext
+EXA-DATA_ANALYST_ASSESSMENT/
+├── .env
+├── .gitignore
+├── db_creds.yaml                               [private credentials]
+├── EMIS_README.md
+├── ERD_PNG.png
+├── main.py                                     [runs ETL]
+├── Q1.csv                                      [main query, Q1 saved to .csv]
+├── Q2.csv                                      [main query, Q2 saved to .csv]
+├── Q3.csv                                      [main query, Q3 saved to .csv]
 ├── README.md
-├── databricks      [Notebooks used in Databricks]
-│   ├── _1_mount_s3_to_databricks.ipynb
-│   ├── _2_batch_data_processing_from_mounted_s3.ipynb
-│   ├── _3_pinterest_queries.ipynb
-│   └── _4_streaming_data_processing.ipynb
-├── db_creds.yaml   [Private credentials]
-├── documentations      [Links to README.md]
-│   ├── milestone_3.md
-│   ├── milestone_4.md
-│   ├── milestone_5.md
-│   ├── milestone_8.md
-│   └── milestone_9.md
-├── file_structure.txt      [Overview of project directory structure]
-├── requirements.txt        [Project environment requirements]
-├── user_posting_emulation_basic.py
-├── user_posting_emulation_batch.py
-├── user_posting_emulation_streaming.py
-└── your_UserId_dag.py      [DAG file uploaded to AWS MWAA (Airflow UI) to run the Databricks notebook]
-
-
-- /PINTEREST-DATA-PIPELINE905
-    - This folder has all the folders seen above as well as containing .env and .gitignore
+├── requirements.txt                            [project environment requirements]
+├── structure.txt                               [overview of project directory structure]
+├── .vscode
+│   └── settings.json
+├── data
+│   ├── clinical_codes.csv                      [master table]
+│   ├── combined_medication.csv                 [master table after combining .csv files]
+│   ├── combined_observation.csv                [master table after combining .csv file]
+│   ├── patient.csv                             [master table]
+│   ├── medication
+│   │   ├── medication.csv                      [file contains column titles]
+│   │   ├── medication_10.csv
+│   │   ├── medication_11.csv
+│   │   ├── medication_12.csv
+│   │   ├── medication_13.csv
+│   │   ├── medication_14.csv
+│   │   ├── medication_15.csv
+│   │   ├── medication_2.csv
+│   │   ├── medication_3.csv
+│   │   ├── medication_4.csv
+│   │   ├── medication_5.csv
+│   │   ├── medication_6.csv
+│   │   ├── medication_7.csv
+│   │   ├── medication_8.csv
+│   │   ├── medication_9.csv
+│   └── observation
+│       ├── observation.csv                     [file contains column titles]
+│       ├── observation_10.csv
+│       ├── observation_11.csv
+│       ├── observation_12.csv
+│       ├── observation_2.csv
+│       ├── observation_3.csv
+│       ├── observation_4.csv
+│       ├── observation_5.csv
+│       ├── observation_6.csv
+│       ├── observation_7.csv
+│       ├── observation_8.csv
+│       ├── observation_9.csv
+├── _01_emis_data_analysis_project_files        [file contains column titles]
+│   ├── cleaning_clinical_code_df.ipynb
+│   ├── cleaning_combined_observations_df.ipynb
+│   ├── cleaning_medication_df.ipynb
+│   ├── cleaning_patient_df.ipynb
+│   ├── database_utils.py
+│   ├── data_cleaning.py
+│   ├── data_extraction.py
+│   └── __pycache__
+│       ├── database_utils.cpython-312.pyc
+│       ├── data_cleaning.cpython-312.pyc
+│       └── data_extraction.cpython-312.pyc
+└── _02_sql_files
+    ├── _01_preliminary_investigations_in_pgadmin.sql
+    ├── _02_star_schema.sql                     [execute to create star schema and update/alter/create tables]
+    ├── _03_sql_queries.sql                     [execute to run Q1, Q2, Q3 queries plus save Q3 in .csv in root/]
+    └── _04_validity_check_of_overall_query.sql [execute]
+```
+- /EXA-DATA_ANALYST_ASSESSMENT
     - The .env file points to the stored private credentials
-    - *.yaml, *.env, and  __pycache__/ have been added to .gitignore
+    - *.yaml, *.env, and  __pycache__/, combined_medication.csv and combined_observation.csv have been added to .gitignore
     - Environment details saved to requirements.txt
-    - README.md will cover all aspects of how the project was conducted over 9 milestones
-
-Screen shot of EXPLORER from VS Code containing the above contents:
-
-![Directory](Images/29_directory.jpg)
+    - README.md will cover all aspects of how the project was conducted over 2 milestones
 
 # Languages
 
 - Python
-- PySpark SQL
-- Spark SQL
+- SQL
 
 # License information
 
 This project is licensed under the terms of the [MIT License](LICENSE.md). Please see the [LICENSE.md](LICENSE.md) file for details.
-
-

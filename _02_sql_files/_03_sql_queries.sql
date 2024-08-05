@@ -1,4 +1,4 @@
--- Part 1: Using the patient data provided identify how many patients there are for each given postcode 
+-- Part 1, Q1: Using the patient data provided identify how many patients there are for each given postcode 
 -- area to check which area would be best to use for the population you are looking for. Patient counts 
 -- should be reviewed by gender to make sure there's enough distribution across genders.
 
@@ -27,7 +27,7 @@ ORDER BY
     total_patients_per_postcode DESC, postcode_area, gender;
 
 
--- Part 2: Using the information you have from part 1 identify the 2 most suitable postcode areas (i.e. largest patient count) 
+-- Part 2, Q2: Using the information you have from part 1 identify the 2 most suitable postcode areas (i.e. largest patient count) 
 -- and derive a list of patients that fit the following criteria so that you can invite them to take part in a local research study.
 
 WITH patient_counts AS (
@@ -66,7 +66,7 @@ ORDER BY
     rp.postcode_rank
 
 
--- Part 3 or 3:
+-- Part 2, Q3:
 -- >>>>>>>>>>>>>>>>NOTE: refer to investigating.sql to see how the final solution was refined to reduce duplicate entries<<<<<<<<<<<<<<
 
 -- Patients should have:
