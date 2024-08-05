@@ -1,6 +1,6 @@
 # EMIS Technical Assessment
 
-# Project description
+# Project Description
 
 The EMIS Technical Assessment project aims to demonstrate the ability to design scalable, usable and readable SQL code. The primary objectives include identifying patient by area using their postcodes and deriving a list of eligible patients for a local research study based on specific medical criteria.
 
@@ -305,7 +305,7 @@ SELECT DISTINCT
 # Project Architecture
 The project is organised into two main parts, each addressing the specific tasks outlined in the assessment.
 
-# Installation instructions
+# Installation Instructions
 From the main/root directory of the project folder, follow these steps. Clone the repository:
 
 1. cd into the directory and then in the command line:
@@ -334,7 +334,7 @@ From the main/root directory of the project folder, follow these steps. Clone th
 
 5. Save your database credentials to db_creds.yaml for security and to enable data upload to pgAdmin4.
 
-# Usage instructions
+# Usage Instructions
 
 1. Run the `main.py` to execute the data extraction, cleaning, and database creation processes in the `/root` folder via the terminal in VS Code.
 
@@ -455,6 +455,6 @@ EXA-DATA_ANALYST_ASSESSMENT/
 - Python
 - SQL
 
-# License information
+# License Information
 
 This project is licensed under the terms of the [MIT License](LICENSE.md). Please see the [LICENSE.md](LICENSE.md) file for details.
